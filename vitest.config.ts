@@ -5,7 +5,8 @@ import tsconfigPaths from 'vite-tsconfig-paths';
 export default defineConfig({
   plugins: [react(), tsconfigPaths()],
   test: {
-    environment: 'jsdom',
+    // Calculation tests do not render React, so avoid requiring an unused DOM runtime.
+    environment: 'node',
     globals: true,
     include: ['lib/**/*.test.ts'],
   },

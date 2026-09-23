@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Group, Transaction, Item, Discount, ItemSplit } from '@/lib/types';
+import { Group, Transaction, Item, Discount, ItemSplit, Payment } from '@/lib/types';
 import { generateId } from '@/lib/utils';
 
 interface TransactionFormProps {
@@ -22,6 +22,13 @@ interface TransactionFormProps {
 export function TransactionForm({ group, transaction, onSave, onCancel }: TransactionFormProps) {
   const [name, setName] = useState(transaction?.name || '');
   const [payerId, setPayerId] = useState(transaction?.payerId || group.members[0]?.id || '');
+  const [paymentAmounts, setPaymentAmounts] = useState<Record<string, number>>(() => {
+    if (transaction?.payments?.length) {
+      return Object.fromEntries(transaction.payments.map(payment => [payment.memberId, payment.amount]));
+    }
+    return payerId ? { [payerId]: 0 } : {};
+  });
+  const [isAutoSinglePayment, setIsAutoSinglePayment] = useState(!transaction?.payments?.length);
   const [items, setItems] = useState<Item[]>(transaction?.items || []);
   const [discounts, setDiscounts] = useState<Discount[]>(transaction?.discounts || []);
   const [tax, setTax] = useState(transaction?.tax?.toString() || '0');
@@ -102,12 +109,30 @@ export function TransactionForm({ group, transaction, onSave, onCancel }: Transa
     ));
   };
 
+  const togglePaymentMember = (memberId: string) => {
+    setIsAutoSinglePayment(false);
+    setPaymentAmounts(current => {
+      if (memberId in current) {
+        const { [memberId]: _, ...remaining } = current;
+        return remaining;
+      }
+      return { ...current, [memberId]: 0 };
+    });
+  };
+
+  const updatePaymentAmount = (memberId: string, amount: number) => {
+    setIsAutoSinglePayment(false);
+    setPaymentAmounts(current => ({ ...current, [memberId]: amount }));
+  };
+
   const handleSave = () => {
-    if (!name.trim() || !payerId) return;
+    if (!name.trim() || !payerId || !paymentsMatchTotal) return;
 
     onSave({
       name: name.trim(),
-      payerId,
+      // Keep payerId for users opening this data in an older app version.
+      payerId: payments[0].memberId,
+      payments,
       items,
       discounts,
       tax: parseFloat(tax) || 0,
@@ -123,6 +148,17 @@ export function TransactionForm({ group, transaction, onSave, onCancel }: Transa
     return sum + d.value;
   }, 0);
   const grandTotal = itemsSubtotal - discountsTotal + (parseFloat(tax) || 0) + (parseFloat(serviceCharge) || 0);
+  const payments: Payment[] = Object.entries(paymentAmounts)
+    .filter(([, amount]) => Number.isFinite(amount) && amount > 0)
+    .map(([memberId, amount]) => ({ memberId, amount }));
+  const paymentTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  const paymentsMatchTotal = payments.length > 0 && Math.abs(paymentTotal - grandTotal) < 0.01;
+
+  useEffect(() => {
+    if (isAutoSinglePayment && payerId) {
+      setPaymentAmounts({ [payerId]: Math.max(0, grandTotal) });
+    }
+  }, [grandTotal, isAutoSinglePayment, payerId]);
 
   return (
     <div className="space-y-6 py-4">
@@ -137,20 +173,31 @@ export function TransactionForm({ group, transaction, onSave, onCancel }: Transa
           />
         </div>
 
-        <div>
+        <div className="space-y-2">
           <Label>Yang Membayar</Label>
-          <Select value={payerId} onValueChange={setPayerId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Pilih member" />
-            </SelectTrigger>
-            <SelectContent>
-              {group.members.map(member => (
-                <SelectItem key={member.id} value={member.id}>
-                  {member.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <p className="text-xs text-muted-foreground">Pilih satu atau beberapa member, lalu isi nominal yang benar-benar dibayar. Total pembayaran harus sama dengan total transaksi.</p>
+          <div className="space-y-2 rounded-lg border p-3">
+            {group.members.map(member => {
+              const isPayer = member.id in paymentAmounts;
+              return (
+                <div key={member.id} className="flex items-center gap-2">
+                  <Checkbox checked={isPayer} onCheckedChange={() => togglePaymentMember(member.id)} />
+                  <span className="flex-1 text-sm">{member.name}</span>
+                  {isPayer && (
+                    <Input
+                      aria-label={`Pembayaran ${member.name}`}
+                      className="h-8 w-32"
+                      min="0"
+                      placeholder="Nominal"
+                      type="number"
+                      value={paymentAmounts[member.id] || ''}
+                      onChange={(event) => updatePaymentAmount(member.id, parseFloat(event.target.value) || 0)}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -389,6 +436,10 @@ export function TransactionForm({ group, transaction, onSave, onCancel }: Transa
           <span>Total</span>
           <span>Rp{grandTotal.toLocaleString('id-ID')}</span>
         </div>
+        <div className={`flex justify-between text-sm ${paymentsMatchTotal ? 'text-green-600' : 'text-destructive'}`}>
+          <span>Total dibayar</span>
+          <span>Rp{paymentTotal.toLocaleString('id-ID')} {!paymentsMatchTotal && `(selisih Rp${Math.abs(grandTotal - paymentTotal).toLocaleString('id-ID')})`}</span>
+        </div>
       </div>
 
       {/* Actions */}
@@ -398,7 +449,7 @@ export function TransactionForm({ group, transaction, onSave, onCancel }: Transa
         </Button>
         <Button 
           onClick={handleSave} 
-          disabled={!name.trim() || !payerId}
+          disabled={!name.trim() || !payerId || !paymentsMatchTotal}
           className="flex-1"
         >
           Simpan

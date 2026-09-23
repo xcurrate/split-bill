@@ -13,6 +13,7 @@ import {
   Settlement,
   GroupCalculation,
   DiscountAllocation,
+  Payment,
 } from './types';
 
 // ============================================
@@ -196,6 +197,24 @@ export function calculateTransaction(
   };
 }
 
+/**
+ * Return the recorded payments for a transaction. `payerId` is retained as a
+ * backwards-compatible fallback for transactions created before split payments
+ * were supported.
+ */
+export function getTransactionPayments(
+  transaction: Transaction,
+  grandTotal: number
+): Payment[] {
+  const payments = transaction.payments
+    ?.filter(payment => Number.isFinite(payment.amount) && payment.amount > 0)
+    .filter(payment => payment.memberId);
+
+  if (payments && payments.length > 0) return payments;
+
+  return transaction.payerId ? [{ memberId: transaction.payerId, amount: grandTotal }] : [];
+}
+
 // ============================================
 // GROUP CALCULATIONS & SETTLEMENT
 // ============================================
@@ -224,11 +243,11 @@ export function calculateBalances(
   group.transactions.forEach((transaction, idx) => {
     const calc = transactionCalculations[idx];
     
-    // Add to payer's paid amount
-    const payerBalance = balanceMap.get(transaction.payerId);
-    if (payerBalance) {
-      payerBalance.paid += calc.grandTotal;
-    }
+    // Credit every recorded payer. Older transactions use payerId as a fallback.
+    getTransactionPayments(transaction, calc.grandTotal).forEach(payment => {
+      const payerBalance = balanceMap.get(payment.memberId);
+      if (payerBalance) payerBalance.paid += payment.amount;
+    });
     
     // Add to each member's owes amount
     calc.memberSubtotals.forEach(memberSubtotal => {
