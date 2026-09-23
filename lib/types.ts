@@ -35,12 +35,20 @@ export interface Discount {
 export interface Transaction {
   id: string;
   name: string;
+  /** @deprecated Kept so transactions saved by older app versions still work. */
   payerId: string;
+  /** Amount actually paid by each member. The sum must equal the transaction total. */
+  payments?: Payment[];
   items: Item[];
   discounts: Discount[];
   tax: number; // Tax amount (fixed)
   serviceCharge: number; // Service charge (fixed)
   date: string;
+}
+
+export interface Payment {
+  memberId: string;
+  amount: number;
 }
 
 export interface Group {

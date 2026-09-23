@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Badge } from '@/components/ui/badge';
 import { Group, Member, Transaction } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { calculateGroup, generateShareText } from '@/lib/calculations';
+import { calculateGroup, generateShareText, getTransactionPayments } from '@/lib/calculations';
 import { TransactionForm } from './TransactionForm';
 import { SettlementView } from './SettlementView';
 import { toast } from '@/components/ui/use-toast';
@@ -96,6 +96,13 @@ export function GroupDetail({
     return group.members.find(m => m.id === payerId)?.name || 'Unknown';
   };
 
+  const getPayerLabel = (transaction: Transaction) => {
+    const total = getTransactionTotal(transaction);
+    return getTransactionPayments(transaction, total)
+      .map(payment => `${getPayerName(payment.memberId)} (${formatCurrency(payment.amount)})`)
+      .join(', ');
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -165,7 +172,7 @@ export function GroupDetail({
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold">{transaction.name}</h3>
                           <Badge variant="secondary" className="text-xs">
-                            {getPayerName(transaction.payerId)}
+                            {getPayerLabel(transaction)}
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground mt-1">

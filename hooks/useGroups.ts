@@ -191,6 +191,7 @@ export function useGroups() {
               // Also remove member from all item splits
               transactions: group.transactions.map(transaction => ({
                 ...transaction,
+                payments: transaction.payments?.filter(payment => payment.memberId !== memberId),
                 items: transaction.items.map(item => ({
                   ...item,
                   splits: item.splits.filter(split => split.memberId !== memberId),

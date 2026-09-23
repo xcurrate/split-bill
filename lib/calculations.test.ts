@@ -11,6 +11,7 @@ import {
   calculateTransaction,
   calculateSettlements,
   calculateGroup,
+  getTransactionPayments,
 } from './calculations';
 import {
   Item,
@@ -408,6 +409,40 @@ describe('calculateSettlements', () => {
 // ============================================
 
 describe('calculateGroup', () => {
+  it('credits each payer when two members pay one transaction together', () => {
+    const group: Group = {
+      id: 'group-multi-payer',
+      name: 'Shared payment',
+      members: [createMember('member-1', 'Alice'), createMember('member-2', 'Bob'), createMember('member-3', 'Charlie')],
+      transactions: [createTransaction({
+        payerId: 'member-1',
+        payments: [
+          { memberId: 'member-1', amount: 60000 },
+          { memberId: 'member-2', amount: 40000 },
+        ],
+        items: [createItem({ price: 100000, splits: [
+          { memberId: 'member-1', quantity: 2 },
+          { memberId: 'member-2', quantity: 1 },
+          { memberId: 'member-3', quantity: 1 },
+        ] })],
+      })],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const result = calculateGroup(group);
+
+    expect(result.balances.find(balance => balance.memberId === 'member-1')?.netBalance).toBe(10000);
+    expect(result.balances.find(balance => balance.memberId === 'member-2')?.netBalance).toBe(15000);
+    expect(result.balances.find(balance => balance.memberId === 'member-3')?.netBalance).toBe(-25000);
+    expect(result.settlements.reduce((sum, settlement) => sum + settlement.amount, 0)).toBe(25000);
+  });
+
+  it('uses the legacy single payer when split payments are absent', () => {
+    const transaction = createTransaction({ payerId: 'member-2' });
+    expect(getTransactionPayments(transaction, 75000)).toEqual([{ memberId: 'member-2', amount: 75000 }]);
+  });
+
   it('should calculate complete group with multiple transactions', () => {
     const group: Group = {
       id: 'group-1',
