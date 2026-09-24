@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Group, Transaction, Item, Discount, ItemSplit, Payment } from '@/lib/types';
+import { scalePaymentsToTotal } from '@/lib/calculations';
 import { generateId } from '@/lib/utils';
 
 interface TransactionFormProps {
@@ -33,6 +34,7 @@ export function TransactionForm({ group, transaction, onSave, onCancel }: Transa
   const [discounts, setDiscounts] = useState<Discount[]>(transaction?.discounts || []);
   const [tax, setTax] = useState(transaction?.tax?.toString() || '0');
   const [serviceCharge, setServiceCharge] = useState(transaction?.serviceCharge?.toString() || '0');
+  const previousGrandTotal = useRef<number | null>(null);
 
   // Item form state
   const [itemName, setItemName] = useState('');
@@ -159,6 +161,29 @@ export function TransactionForm({ group, transaction, onSave, onCancel }: Transa
       setPaymentAmounts({ [payerId]: Math.max(0, grandTotal) });
     }
   }, [grandTotal, isAutoSinglePayment, payerId]);
+
+  useEffect(() => {
+    const hasGrandTotalChanged = previousGrandTotal.current !== null
+      && previousGrandTotal.current !== grandTotal;
+
+    if (transaction && !isAutoSinglePayment && hasGrandTotalChanged) {
+      setPaymentAmounts(current => {
+        const adjustedPayments = scalePaymentsToTotal(
+          Object.entries(current).map(([memberId, amount]) => ({ memberId, amount })),
+          grandTotal
+        );
+
+        if (adjustedPayments.length === 0) return current;
+
+        return {
+          ...current,
+          ...Object.fromEntries(adjustedPayments.map(payment => [payment.memberId, payment.amount])),
+        };
+      });
+    }
+
+    previousGrandTotal.current = grandTotal;
+  }, [grandTotal, isAutoSinglePayment, transaction]);
 
   return (
     <div className="space-y-6 py-4">

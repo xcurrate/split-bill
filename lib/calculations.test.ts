@@ -12,6 +12,7 @@ import {
   calculateSettlements,
   calculateGroup,
   getTransactionPayments,
+  scalePaymentsToTotal,
 } from './calculations';
 import {
   Item,
@@ -336,6 +337,32 @@ describe('calculateTransaction', () => {
     expect(alice?.serviceChargeShare).toBe(3000);
     expect(bob?.taxShare).toBe(4000);
     expect(bob?.serviceChargeShare).toBe(2000);
+  });
+});
+
+describe('scalePaymentsToTotal', () => {
+  it('preserves payer proportions after an edited transaction total changes', () => {
+    const adjustedPayments = scalePaymentsToTotal([
+      { memberId: 'miko', amount: 70000 },
+      { memberId: 'citra', amount: 45000 },
+    ], 101250);
+
+    expect(adjustedPayments).toEqual([
+      { memberId: 'miko', amount: 61630 },
+      { memberId: 'citra', amount: 39620 },
+    ]);
+    expect(adjustedPayments.reduce((sum, payment) => sum + payment.amount, 0)).toBe(101250);
+  });
+
+  it('keeps the total exact when proportional rounding leaves a remainder', () => {
+    const adjustedPayments = scalePaymentsToTotal([
+      { memberId: 'member-1', amount: 1 },
+      { memberId: 'member-2', amount: 1 },
+      { memberId: 'member-3', amount: 1 },
+    ], 100);
+
+    expect(adjustedPayments.map(payment => payment.amount)).toEqual([34, 33, 33]);
+    expect(adjustedPayments.reduce((sum, payment) => sum + payment.amount, 0)).toBe(100);
   });
 });
 
