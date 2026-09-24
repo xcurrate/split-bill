@@ -215,6 +215,49 @@ export function getTransactionPayments(
   return transaction.payerId ? [{ memberId: transaction.payerId, amount: grandTotal }] : [];
 }
 
+/**
+ * Reallocate recorded payments when a transaction total changes while keeping
+ * each payer's original share. Amounts are rounded to the smallest sensible
+ * currency unit and any remainder is assigned by largest fractional share, so
+ * their sum always equals the new total.
+ */
+export function scalePaymentsToTotal(payments: Payment[], grandTotal: number): Payment[] {
+  const validPayments = payments.filter(
+    payment => payment.memberId && Number.isFinite(payment.amount) && payment.amount > 0
+  );
+  const previousTotal = validPayments.reduce((sum, payment) => sum + payment.amount, 0);
+  const targetTotal = Math.max(0, grandTotal);
+
+  if (validPayments.length === 0 || previousTotal <= 0) return [];
+
+  // Rupiah payments are normally whole numbers. Retain two decimal places for
+  // totals that already contain a fractional amount.
+  const unit = Number.isInteger(targetTotal) ? 1 : 0.01;
+  const targetUnits = Math.round(targetTotal / unit);
+  const scaledPayments = validPayments.map(payment => {
+    const exactUnits = (payment.amount / previousTotal) * targetUnits;
+    return {
+      memberId: payment.memberId,
+      units: Math.floor(exactUnits),
+      remainder: exactUnits - Math.floor(exactUnits),
+    };
+  });
+
+  let remainingUnits = targetUnits - scaledPayments.reduce((sum, payment) => sum + payment.units, 0);
+  const remainderOrder = scaledPayments
+    .map((payment, index) => ({ index, remainder: payment.remainder }))
+    .sort((a, b) => b.remainder - a.remainder);
+
+  for (let index = 0; remainingUnits > 0; index += 1, remainingUnits -= 1) {
+    scaledPayments[remainderOrder[index % remainderOrder.length].index].units += 1;
+  }
+
+  return scaledPayments.map(payment => ({
+    memberId: payment.memberId,
+    amount: payment.units * unit,
+  }));
+}
+
 // ============================================
 // GROUP CALCULATIONS & SETTLEMENT
 // ============================================
